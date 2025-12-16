@@ -530,29 +530,33 @@ def process_message_safe(wa_number: str, text: str):
             from datetime import date
             dates = session["dob"].split("-")
             dob = date(int(dates[-1]), int(dates[1]),int(dates[0]))
-            patient = frappe.get_doc({
-                "doctype": "Patient",
-                "first_name": session["name"].split(" ")[0],
-                "last_name": session["name"].split(" ")[1],
-                "mobile": wa_number,
-                "email": session["email"],
-                "sex": session["gender"],
-                "dob": dob,
-                "uid": session["national_id"],
-                "status": "Active"
-            }).insert(ignore_permissions=True)
+            try:
+                patient = frappe.get_doc({
+                    "doctype": "Patient",
+                    "first_name": session["first_name"].strip(),
+                    "last_name": session["second_name"].strip(),
+                    "mobile": wa_number,
+                    "email": session["email"],
+                    "sex": session["gender"],
+                    "dob": dob,
+                    "uid": session["national_id"],
+                    "status": "Active"
+                }).insert(ignore_permissions=True)
+            except Exception as e:
+                 frappe.log_error(session.get("step", "start"),e)
+                 return "Could not complete registration. Try again later"
 
             frappe.db.commit()
             session["patient"] = patient.name
             session["patient_name"] = patient.first_name
             cache.set(session_key, json.dumps(session), TTL)
             return f"""
-            ✅ **Patient Registered Successfully!**
+            ✅ *Patient Registered Successfully!*
 
             🆔 Patient ID: {patient.name}
             👤 Patient Name: {patient.first_name}
 
-            📅 Book an appointment with us!! 
+            📅 Purpose to book an appointment with us soon. To book,  
             {department_list()}
             """
 
@@ -745,7 +749,8 @@ def view_appointments(wa_number):
     return "Your Upcoming Appointments:\n\n" + "\n".join(lines)
 
 def find_patient_by_mobile(mobile):
-    return frappe.db.get_value("Patient", {"mobile": f"+{mobile}",}, ["name", "patient_name"], as_dict=1)["name"]
+    patient = frappe.db.get_value("Patient", {"mobile": f"+{mobile}",}, ["name", "patient_name"], as_dict=1)
+    return patient["name"] if patient else None
 
 
 def save_to_transact(resp,name):
