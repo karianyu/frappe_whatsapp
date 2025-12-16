@@ -578,8 +578,6 @@ def process_message_safe(wa_number: str, text: str):
             idx = int(text) - 1
             dept = depts[idx]
             session["department"] = dept["name"]
-            session["step"] = "select_doctor"
-            cache.set(session_key, json.dumps(session), TTL)
             return doctor_list(dept["name"])
         except Exception as e:
             frappe.log_error(session.get("step", "start"),e)
@@ -734,8 +732,10 @@ def department_list():
 def doctor_list(dept):
     docs = get_practitioners(dept)
     if not docs:
-        return "No doctors available in this department."
+        return "No doctors available in this department. Please select different department."
     lines = [f"{i+1}. Dr. {d['practitioner_name']}" for i, d in enumerate(docs)]
+    session["step"] = "select_doctor"
+    frappe.cache.set(session_key, json.dumps(session), TTL)
     return "Select Doctor:\n\n" + "\n".join(lines)
 
 def view_appointments(wa_number):
