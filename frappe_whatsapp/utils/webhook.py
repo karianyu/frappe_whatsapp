@@ -428,6 +428,8 @@ def process_message_safe(wa_number: str, text: str):
             }
         if text.isdigit():
             idx = int(text)
+            if idx < 0:
+                return "Invalid Response"
             appts = session_appointments.get("appointments", [])
             apt = next((a for a in appts if a["idx"] == idx), None)
             if apt:
@@ -503,6 +505,8 @@ def process_message_safe(wa_number: str, text: str):
     if session.get("step", "start") == "awaiting_id":
         try:
             if (len(text) > 7) and (len(text) < 9):
+                if int(text) < 0:
+                    return "Invalid Response"
                 session["national_id"] = int(text)
             else:
                 return "Invalid ID number. Reply with a valid ID Number"
@@ -568,6 +572,8 @@ def process_message_safe(wa_number: str, text: str):
         depts = get_departments()
         try:
             idx = int(text) - 1
+            if idx < 0:
+                return "Invalid Response"
             dept = depts[idx]
             session["department"] = dept["name"]
             if doctor_list(dept["name"]):
@@ -584,6 +590,8 @@ def process_message_safe(wa_number: str, text: str):
         doctors = get_practitioners(session["department"])
         try:
             idx = int(text) - 1
+            if idx < 0:
+                return "Invalid Response"
             doc = doctors[idx]
             session["practitioner"] = doc["name"]
             session["practitioner_name"] = doc["practitioner_name"]
@@ -619,6 +627,8 @@ def process_message_safe(wa_number: str, text: str):
         slots = get_slots(session["practitioner"], session["date"])
         try:
             idx = int(text) - 1
+            if idx < 0:
+                return "Invalid Response"
             session["slot"] = slots[idx]
             session["step"] = "confirm"
 
@@ -637,7 +647,7 @@ def process_message_safe(wa_number: str, text: str):
                 📝 Reply *CONFIRM* to book and make payment.
                 """
         except Exception as e:
-            return "❌ Invalid slot."
+            return "❌ Invalid slot number."
 
     if session.get("step", "start") == "confirm" and text.lower() == "confirm":
         try:
