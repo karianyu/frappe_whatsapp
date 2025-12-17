@@ -15,7 +15,7 @@ from healthcare.healthcare.api.patient_portal import (
             get_departments, get_practitioners, get_slots,
             make_appointment, get_fees, get_appointments
         )
-from datetime import datetime
+from datetime import date, datetime
 from healthcare.healthcare.payment import (send_stk_push , get_access_token)
 
 
@@ -314,14 +314,6 @@ def update_message_status(data):
 
 
 
-
-def get_api_keys():
-    return get_decrypted_password(doctype="Whatsapp API", name="Whatsapp API", fieldname ="api_key")
-
-
-
-
-
 # Redis keys
 SESSION_PREFIX = "wa_session:"
 IDEMPOTENCY_PREFIX = "wa_msg:"
@@ -355,7 +347,7 @@ def process_message_safe(wa_number: str, text: str):
     
 
     # Reset
-    if text in ["menu", "hi", "hello", "start"]:
+    if text.lower() in ["menu", "hi", "hello", "start"]:
         session = {}
         cache.set(session_key, json.dumps(session), TTL)
         return welcome_message()
@@ -446,7 +438,7 @@ def process_message_safe(wa_number: str, text: str):
         try:
             patient = frappe.get_doc("Patient",session.get("patient") or find_patient_by_mobile(wa_number))
             if not patient:
-                return "Patient not found. Please register first."
+                return "Patient not found. Reply with `Menu` and choose option 3 to register."
             
             # Send Payment Request
             call_back = frappe.utils.get_url()+f"/app/patient-appointment/{session['current_apt_ref']}"
@@ -490,7 +482,7 @@ def process_message_safe(wa_number: str, text: str):
         session["step"] = "awaiting_email"
         cache.set(session_key, json.dumps(session), TTL)
         return "Great! Reply with your email (e.g. janedoe@example.com) - w" \
-        "e will use this email to send you documents related toyour journey with us."
+        "e will use this email to send you documents related to your journey with us."
     
     if session.get("step", "start") == "awaiting_email":
         if "@" not in text:
@@ -554,9 +546,9 @@ def process_message_safe(wa_number: str, text: str):
             ✅ *Patient Registered Successfully!*
 
             🆔 Patient ID: {patient.name}
-            👤 Patient Name: {patient.first_name}
+            👤 Patient Name: {patient.first_name} {patient.last_name}
 
-            📅 Purpose to book an appointment with us soon. To book,  
+            📅 Purpose to book an appointment with us soon. To book\n,  
             {department_list()}
             """
 
@@ -578,10 +570,15 @@ def process_message_safe(wa_number: str, text: str):
             idx = int(text) - 1
             dept = depts[idx]
             session["department"] = dept["name"]
-            return doctor_list(dept["name"])
+            if doctor_list(dept["name"]):
+                session["step"] = "select_doctor"
+                cache.set(session_key, json.dumps(session), TTL)
+                return doctor_list(dept["name"])
+            else:
+                return f"There are currently no doctors available in `{dept['name']}` departemnt.\nChoose another department."
         except Exception as e:
             frappe.log_error(session.get("step", "start"),e)
-            return f"Invalid selection. Reply with number only."
+            return f"Invalid selection. Try again"
 
     if session.get("step", "start") == "select_doctor":
         doctors = get_practitioners(session["department"])
@@ -592,16 +589,17 @@ def process_message_safe(wa_number: str, text: str):
             session["practitioner_name"] = doc["practitioner_name"]
             session["step"] = "select_date"
             cache.set(session_key, json.dumps(session), TTL)
-            return "Choose date:\n1. Reply with the date in the formart dd-mm-yy\n e.g 15-12-2025"
-        except:
+            return "To choose an appointment date date, reply with the date in the formart `dd-mm-yy`\n e.g `15-12-2025`"
+        except Exception as e:
+            frappe.log_error(session.get("step", "start"),e)
             return "Invalid doctor. Try again."
 
     if session.get("step", "start") == "select_date":
         # if is date
-        if not check_if_is_date(text):
-            return "That can't be a date, can it?.\nReply in the formart\ndd-mm-yy  e.g 15-12-2025"
+        if not check_if_is_date(text, check_future=True):
+            return "Invalid date.\nReply in the formart\ndd-mm-yy  e.g 15-12-2025\nDate must be later today, or after today"
         
-        if text.split("-")[-1] not in ["2025","2026"]:
+        if text.split("-")[-1] not in [x.__dict__["year"] for x in frappe.get_single("Whatsapp API").years_of_operation]:
             return "Select a date with one (1) year of today"
 
 
@@ -610,7 +608,7 @@ def process_message_safe(wa_number: str, text: str):
             session["step"] = "select_slot"
             slots = get_slots(session["practitioner"], session["date"])
             if not slots:
-                return "No slots available on this date. Reply MENU to restart Or Choose a different day"
+                return "No slots available on this date.Choose a different day.\nReply with a date in the formart `dd-mm-yy` or `Menu` to start again"
             slot_text = "Available slots:\n" + "\n".join([f"{i+1}. {s}" for i, s in enumerate(slots)])
             cache.set(session_key, json.dumps(session), TTL)
             return slot_text + "\n\nReply with number"
@@ -629,7 +627,7 @@ def process_message_safe(wa_number: str, text: str):
             charge = session["fees"]
             cache.set(session_key, json.dumps(session), TTL)
             return f"""
-                📋 **Appointment Summary**
+                📋 *Appointment Summary*\n
 
                 👨‍⚕️ Doctor: Dr. {session['practitioner_name']}
                 📅 Date: {session['date']}
@@ -667,7 +665,7 @@ def process_message_safe(wa_number: str, text: str):
             ⏰ Time: {session['slot']}
 
             🙏 Thank you!
-            📲 Reply *MENU* anytime for the main menu. To confirm your slot, reply *PAY*
+            📲 To confirm your slot, reply *PAY*. Reply *MENU* for the main menu. 
                 """
         except Exception as e:
             return f"Booking failed: {str(e)}"
@@ -676,7 +674,7 @@ def process_message_safe(wa_number: str, text: str):
         try:
             patient = frappe.get_doc("Patient",session.get("patient") or find_patient_by_mobile(wa_number))
             if not patient:
-                return "Patient not found. Please register first."
+                return "Patient not found. Reply with `Menu` and choose option 3 to register."
             
             # Send Payment Request
             call_back = frappe.utils.get_url()+f"/app/patient-appointment/{session['ref']}"
@@ -687,13 +685,13 @@ def process_message_safe(wa_number: str, text: str):
             push = send_stk_push(wa_number,session_key,session["fees"],patient.email,patient.first_name or patient.last_name, json.loads(get_access_token().text)["token"],call_back)
             response_text = json.loads(push.text)
             if response_text["error"]["code"] and response_text["error"]["message"]:
-                return "💳 Payment request failed. ⏳ Please reply with `Pay` again in 5 minutes to complete transaction.🙏 Thank you!"
+                return "💳 Payment request initiated. ⏳ Check your phone to complete transaction.\nIf you did not get a prompt, reply with `Pay` after 5 minutes to complete transaction"
 
             save_to_transact(push.text, new_transact.name)
             session["step"] = "start"
             cache.set(session_key, json.dumps(session), TTL)  # reset
 
-            return "💳 Payment request initiated. ⏳ We will notify you once complete. 🙏 Thank you!"
+            return "💳 Payment request initiated. ⏳ Check your phone to complete transaction."
         except Exception as e:
             return f"Booking failed: {str(e)}"
 
@@ -704,7 +702,7 @@ def welcome_message():
     company_name = frappe.get_value("Whatsapp API","Whatsapp API","company_name")
     return f"""👋 Hi! Welcome to {company_name}
 
-        Please select an option:
+        Select an option to start:
         1️⃣ Book Appointment
         2️⃣ View My Appointments
         3️⃣ New Patient 
@@ -712,9 +710,6 @@ def welcome_message():
         Reply with 1, 2 or 3"""
 
 def send_reply(number,text,type="text"):
-    # response = requests.post('https://api.flaresend.com/send-message',
-    #     headers={'Authorization': f'Bearer {get_api_keys()}'},
-    #     json={'recipients': [number], 'text': text, "type": type})
     
     new_whatsapp_message = frappe.new_doc("WhatsApp Message")
     new_whatsapp_message.label = "EMT BOT"
@@ -732,16 +727,14 @@ def department_list():
 def doctor_list(dept):
     docs = get_practitioners(dept)
     if not docs:
-        return "No doctors available in this department. Please select different department."
+        return False
     lines = [f"{i+1}. Dr. {d['practitioner_name']}" for i, d in enumerate(docs)]
-    session["step"] = "select_doctor"
-    frappe.cache.set(session_key, json.dumps(session), TTL)
     return "Select Doctor:\n\n" + "\n".join(lines)
 
 def view_appointments(wa_number):
     patient = find_patient_by_mobile(wa_number)
     if not patient:
-        return "No patient record found. Reply 4 to register."
+        return "No patient record found. Reply with `Menu` and choose option 3 to register."
     appts = get_appointments() or []
     if not appts:
         return "You have no upcoming appointments."
@@ -768,7 +761,7 @@ def save_to_transact(resp,name):
 def handle_view_appointments_flow(wa_number: str,):
     patient = find_patient_by_mobile(wa_number)
     if not patient:
-        return "You are not registered yet.\nReply 4 to register."
+        return "You are not registered yet.\nReply with `Menu` and choose option 3 to register."
 
     # Fetch appointments (upcoming first)
     appointments = frappe.db.get_all(
@@ -812,15 +805,41 @@ def appointment_details(apt: dict, wa_number: str):
     return msg
 
 
-def check_if_is_date(text):
+def check_if_is_date(text: str, check_future: bool = False) -> date | bool:
+    """
+    Parses a string in YYYY-MM-DD format and checks if it's a valid date.
+    
+    Args:
+        text (str): The date string to validate (expected format: YYYY-MM-DD).
+        check_future (bool): If True, returns True only if the date is in the future.
+                             If False, returns the date object if valid.
+    
+    Returns:
+        date | bool: 
+            - If check_future=False: Returns datetime.date object if valid, else False.
+            - If check_future=True: Returns True if valid AND in the future, else False.
+    """
     sections = text.split("-")
+    
+    # Must have exactly 3 parts: year, month, day
     if len(sections) != 3:
         return False
-    for sect in sections:
-        try:
-            as_int = int(sect)
-        except:
-            return False
-    return True
-
-
+    
+    try:
+        year = int(sections[-1])
+        month = int(sections[1])
+        day = int(sections[0])
+    except ValueError:
+        return False
+    
+    try:
+        parsed_date = date(year, month, day)
+    except ValueError:
+        # Invalid date (e.g., month 13, day 30 in February, etc.)
+        return False
+    
+    if check_future:
+        today = date.today()
+        return parsed_date >= today
+    
+    return parsed_date
