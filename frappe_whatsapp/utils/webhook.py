@@ -777,7 +777,7 @@ def handle_view_appointments_flow(wa_number: str,):
     )
 
     if not appointments:
-        return "You have no upcoming appointments.\n\nReply 1 to book one!"
+        return False
     return appointments
 
 
