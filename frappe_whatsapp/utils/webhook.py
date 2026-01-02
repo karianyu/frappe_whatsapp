@@ -449,12 +449,11 @@ def process_message_safe(wa_number: str, text: str):
             new_transact.save(ignore_permissions=True)
             # number,id,amount, email, first_name, token,callback
             session_amount = frappe.db.get_value("Patient Appointment",session["current_apt_ref"],"paid_amount")  if frappe.db.get_value("PesaPal","PesaPal","live") else 1
-            push = send_stk_push(wa_number,session_key,session_amount,patient.email,patient.first_name or patient.last_name, json.loads(get_access_token().text)["token"],call_back)
+            push = send_stk_push(wa_number,new_transact.name,session_amount,patient.email,patient.first_name or patient.last_name, json.loads(get_access_token().text)["token"],call_back)
             response_text = json.loads(push.text)
             if response_text["error"]["code"] and response_text["error"]["message"]:
                 return "💳 Payment request failed. ⏳ Please reply with `Pay` again in 5 minutes to complete transaction.🙏 Thank you!"
 
-            save_to_transact(push.text, new_transact.name)
             session["step"] = "start"
             cache.set(session_key, json.dumps(session), TTL)  # reset
 
@@ -514,12 +513,12 @@ def process_message_safe(wa_number: str, text: str):
             return "Invalid ID number. Reply with a valid ID Number"
         session["step"] = "awaiting_gender"
         cache.set(session_key, json.dumps(session), TTL)
-        return "⚧️ Gender?\nReply: MALE / FEMALE / OTHER"
+        return "⚧️ Gender?\nReply: MALE / FEMALE"
 
     if session.get("step", "start") == "awaiting_gender":
         gender = text.upper()
-        if gender not in ["MALE", "FEMALE", "OTHER"]:
-            return "Please reply with MALE, FEMALE or OTHER"
+        if gender not in ["MALE", "FEMALE"]:
+            return "Please reply with MALE or FEMALE"
         session["gender"] = gender
         session["step"] = "book_appointment"
         try:
@@ -692,12 +691,12 @@ def process_message_safe(wa_number: str, text: str):
             new_transact.appointment = session["ref"]
             new_transact.save(ignore_permissions=True)
             # number,id,amount, email, first_name, token,callback    
-            push = send_stk_push(wa_number,session_key,session["fees"],patient.email,patient.first_name or patient.last_name, json.loads(get_access_token().text)["token"],call_back)
+            push = send_stk_push(wa_number,new_transact.name,session["fees"],patient.email,patient.first_name or patient.last_name, json.loads(get_access_token().text)["token"],call_back)
             response_text = json.loads(push.text)
             if response_text["error"]["code"] and response_text["error"]["message"]:
                 return "💳 Payment request initiated. ⏳ Check your phone to complete transaction.\nIf you did not get a prompt, reply with `Pay` after 5 minutes to complete transaction"
 
-            save_to_transact(push.text, new_transact.name)
+            
             session["step"] = "start"
             cache.set(session_key, json.dumps(session), TTL)  # reset
 
@@ -754,16 +753,6 @@ def view_appointments(wa_number):
 def find_patient_by_mobile(mobile):
     patient = frappe.db.get_value("Patient", {"mobile": f"+{mobile}",}, ["name", "patient_name"], as_dict=1)
     return patient["name"] if patient else None
-
-
-def save_to_transact(resp,name):
-	try:
-		transact = frappe.get_doc("Transact Tracker", name)
-		transact.response = resp
-		transact.order_id = json.loads(resp)["order_tracking_id"]
-		transact.save(ignore_permissions=True)
-	except Exception as e:
-		frappe.log_error("TRANSACT TRACKER",(f"Error adding to transaction - {e}"))
 
 
 

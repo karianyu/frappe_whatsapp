@@ -2,7 +2,7 @@
  "actions": [],
  "allow_rename": 1,
  "autoname": "format:{flow_name}",
- "creation": "2025-01-09 10:00:00.000000",
+ "creation": "2025-01-09 10:00:00",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
@@ -96,11 +96,11 @@
    "label": "Call to Action"
   },
   {
-   "default": "6.0",
+   "default": "2.1",
    "fieldname": "data_api_version",
    "fieldtype": "Select",
    "label": "Flow JSON Version",
-   "options": "7.3\n7.2\n7.1\n7.0\n6.3\n6.2\n6.1\n6.0\n5.1"
+   "options": "7.3\n7.2\n7.1\n7.0\n6.3\n6.2\n6.1\n6.0\n5.1\n2.1"
   },
   {
    "fieldname": "section_break_screens",
@@ -164,7 +164,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-01-09 10:00:00.000000",
+ "modified": "2025-12-18 12:53:56.020760",
  "modified_by": "Administrator",
  "module": "Frappe Whatsapp",
  "name": "WhatsApp Flow",
@@ -184,6 +184,7 @@
    "write": 1
   }
  ],
+ "row_format": "Dynamic",
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],
