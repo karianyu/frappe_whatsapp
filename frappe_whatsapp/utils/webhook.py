@@ -437,30 +437,30 @@ def process_message_safe(wa_number: str, text: str):
             return "Invalid number."
         
     if session.get("step", "start") == "appt_detail" and text.lower() == "pay":
+        # try:
+        patient = frappe.get_doc("Patient",session.get("patient") or find_patient_by_mobile(wa_number))
+        if not patient:
+            return "Patient not found. Reply with `Menu` and choose option 3 to register."
+        
+        # Send Payment Request
+        call_back = frappe.utils.get_url()+f"/app/patient-appointment/{session['current_apt_ref']}"
+        new_transact = frappe.new_doc("Transact Tracker")
+        new_transact.appointment = session["current_apt_ref"]
+        new_transact.save(ignore_permissions=True)
+        # number,id,amount, email, first_name, token,callback
+        session_amount = frappe.db.get_value("Patient Appointment",session["current_apt_ref"],"paid_amount")  if frappe.db.get_value("PesaPal","PesaPal","live") else 1
         try:
-            patient = frappe.get_doc("Patient",session.get("patient") or find_patient_by_mobile(wa_number))
-            if not patient:
-                return "Patient not found. Reply with `Menu` and choose option 3 to register."
-            
-            # Send Payment Request
-            call_back = frappe.utils.get_url()+f"/app/patient-appointment/{session['current_apt_ref']}"
-            new_transact = frappe.new_doc("Transact Tracker")
-            new_transact.appointment = session["current_apt_ref"]
-            new_transact.save(ignore_permissions=True)
-            # number,id,amount, email, first_name, token,callback
-            session_amount = frappe.db.get_value("Patient Appointment",session["current_apt_ref"],"paid_amount")  if frappe.db.get_value("PesaPal","PesaPal","live") else 1
             push = send_stk_push(wa_number,new_transact.name,session_amount,patient.email,patient.first_name or patient.last_name, json.loads(get_access_token().text)["token"],call_back)
-            response_text = json.loads(push.text)
-            if response_text["error"]["code"] and response_text["error"]["message"]:
+            if push.text and json.loads(push.text)["error"]["code"] and json.loads(push.text)["error"]["message"]:
                 return "💳 Payment request failed. ⏳ Please reply with `Pay` again in 5 minutes to complete transaction.🙏 Thank you!"
 
             session["step"] = "start"
             cache.set(session_key, json.dumps(session), TTL)  # reset
-
-            return "💳 Payment request initiated. ⏳ We will notify you once complete. 🙏 Thank you!"
         except Exception as e:
-            return f"Booking failed: {str(e)}"
- 
+             pass
+
+        return "💳 Payment request initiated. ⏳ We will notify you once complete. 🙏 Thank you!"
+        
 
     
 
@@ -680,29 +680,29 @@ def process_message_safe(wa_number: str, text: str):
             return f"Booking failed: {str(e)}"
     
     if session.get("step", "start") == "pay" and text.lower() == "pay":
-        try:
-            patient = frappe.get_doc("Patient",session.get("patient") or find_patient_by_mobile(wa_number))
-            if not patient:
-                return "Patient not found. Reply with `Menu` and choose option 3 to register."
-            
-            # Send Payment Request
-            call_back = frappe.utils.get_url()+f"/app/patient-appointment/{session['ref']}"
-            new_transact = frappe.new_doc("Transact Tracker")
-            new_transact.appointment = session["ref"]
-            new_transact.save(ignore_permissions=True)
-            # number,id,amount, email, first_name, token,callback    
+        patient = frappe.get_doc("Patient",session.get("patient") or find_patient_by_mobile(wa_number))
+        if not patient:
+            return "Patient not found. Reply with `Menu` and choose option 3 to register."
+        
+        # Send Payment Request
+        call_back = frappe.utils.get_url()+f"/app/patient-appointment/{session['ref']}"
+        new_transact = frappe.new_doc("Transact Tracker")
+        new_transact.appointment = session["ref"]
+        new_transact.save(ignore_permissions=True)
+        # number,id,amount, email, first_name, token,callback 
+        try:   
             push = send_stk_push(wa_number,new_transact.name,session["fees"],patient.email,patient.first_name or patient.last_name, json.loads(get_access_token().text)["token"],call_back)
-            response_text = json.loads(push.text)
-            if response_text["error"]["code"] and response_text["error"]["message"]:
+            if push.text and json.loads(push.text)["error"]["code"] and json.loads(push.text)["error"]["message"]:
                 return "💳 Payment request initiated. ⏳ Check your phone to complete transaction.\nIf you did not get a prompt, reply with `Pay` after 5 minutes to complete transaction"
 
             
             session["step"] = "start"
             cache.set(session_key, json.dumps(session), TTL)  # reset
-
-            return "💳 Payment request initiated. ⏳ Check your phone to complete transaction."
         except Exception as e:
-            return f"Booking failed: {str(e)}"
+             pass
+
+        return "💳 Payment request initiated. ⏳ Check your phone to complete transaction."
+        
 
     return "Invalid response - Reply `MENU` to start new Session."
 
