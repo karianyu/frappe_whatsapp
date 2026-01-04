@@ -520,7 +520,6 @@ def process_message_safe(wa_number: str, text: str):
         if gender not in ["MALE", "FEMALE"]:
             return "Please reply with MALE or FEMALE"
         session["gender"] = gender
-        session["step"] = "book_appointment"
         try:
             from datetime import date
             dates = session["dob"].split("-")
@@ -542,6 +541,7 @@ def process_message_safe(wa_number: str, text: str):
                  return "Could not complete registration. Try again later"
 
             frappe.db.commit()
+            session["step"] = "book_appointment"
             session["patient"] = patient.name
             session["patient_name"] = patient.first_name
             cache.set(session_key, json.dumps(session), TTL)
