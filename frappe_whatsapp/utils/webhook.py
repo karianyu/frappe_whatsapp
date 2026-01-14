@@ -350,7 +350,7 @@ def process_message_safe(wa_number: str, text: str):
     if text.lower() in ["menu", "hi", "hello", "start"]:
         session = {}
         cache.set(session_key, json.dumps(session), TTL)
-        return welcome_message()
+        return welcome_message(wa_number)
 
     step = session.get("step", "start")
     
@@ -706,10 +706,10 @@ def process_message_safe(wa_number: str, text: str):
 
     return "Invalid response - Reply `MENU` to start new Session."
 
-def welcome_message():
+def welcome_message(number):
     # get company name
     company_name = frappe.get_value("Whatsapp API","Whatsapp API","company_name")
-    return f"""👋 Hi! Welcome to {company_name}
+    return f"""👋 Hello {find_patient_by_mobile(number)}! Welcome to {company_name}
 
         Select an option to start:
         1️⃣ Book Appointment
