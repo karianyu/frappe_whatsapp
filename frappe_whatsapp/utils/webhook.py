@@ -752,7 +752,7 @@ def view_appointments(wa_number):
 
 def find_patient_by_mobile(mobile):
     patient = frappe.db.get_value("Patient", {"mobile": f"+{mobile}",}, ["name", "patient_name"], as_dict=1)
-    return patient["patient_name"] if patient else None
+    return patient["patient_name"] if patient else ""
 
 
 
