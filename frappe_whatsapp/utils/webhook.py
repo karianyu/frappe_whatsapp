@@ -8,15 +8,15 @@ import frappe.utils
 
 from frappe_whatsapp.utils import get_whatsapp_account
 import frappe
-from frappe.utils import getdate, get_time, get_datetime
-from datetime import datetime
 from frappe.utils.password import get_decrypted_password
 import json
 import requests
+from healthcare.healthcare.api.patient_portal import (
+            get_departments, get_practitioners, get_slots,
+            make_appointment, get_fees, get_appointments
+        )
 from datetime import date, datetime
 from healthcare.healthcare.payment import (send_stk_push , get_access_token)
-from healthcare.healthcare.utils import get_appointment_billing_item_and_rate
-
 
 
 
@@ -753,25 +753,25 @@ def view_appointments(wa_number):
     patient = patient_by_mobile(wa_number)
     if not patient:
         return "No patient record found. Reply with `Menu` and choose option 3 to register."
-    appts = []
+    appts = get_appointments(patient) or []
     if not appts:
         return "You have no upcoming appointments."
     lines = [f"• {a['appointment_date']} {a.get('appointment_time','')} - Dr. {a.get('practitioner_name','')}" for a in appts[:5]]
     return "Your Upcoming Appointments:\n\n" + "\n".join(lines)
 
 def find_patient_by_mobile(mobile):
-    patient = frappe.db.get_value("Patient", {"mobile": f"+{mobile}",}, ["name", "patient_name"], as_dict=1)
+    patient = frappe.db.get_value("Patient", {"mobile": mobile}, ["name", "patient_name"], as_dict=1)
     return patient["patient_name"] if patient else ""
 
 def patient_by_mobile(mobile):
-    patient = frappe.db.get_value("Patient", {"mobile": f"+{mobile}",}, ["name", "patient_name"], as_dict=1)
+    patient = frappe.db.get_value("Patient", {"mobile": mobile}, ["name", "patient_name"], as_dict=1)
     return patient["name"]
 
 
 
 
 def handle_view_appointments_flow(wa_number: str,):
-    patient = patient_by_mobile(wa_number)
+    patient = find_patient_by_mobile(wa_number)
     if not patient:
         return "You are not registered yet.\nReply with `Menu` and choose option 3 to register."
 
@@ -860,139 +860,3 @@ def check_if_is_date(text: str, check_future: bool = False) -> date | bool:
 def get_today_ddmmyy():
     """Returns today's date as string in dd-mm-yy format (e.g. 28-01-26)"""
     return datetime.today().strftime("%d-%m-%Y")
-
-def get_departments():
-    return frappe.db.get_all(
-        "Medical Department",
-        filters={"show_in_portal": 1},
-        fields=["name", "department"],
-        order_by="name ASC",
-    )
-
-
-def get_practitioners(department):
-    return frappe.db.get_all(
-        "Healthcare Practitioner",
-        filters={
-            "department": department,
-            "show_in_portal": 1
-        },
-        fields=["name", "practitioner_name"],
-        order_by="practitioner_name ASC"
-    )
-
-
-
-def get_slots(practitioner, date):
-    date = getdate(date)
-    today = getdate()
-
-    if date < today:
-        return []
-
-    practitioner_doc = frappe.get_doc("Healthcare Practitioner", practitioner)
-
-    booked = frappe.db.get_all(
-        "Patient Appointment",
-        filters={
-            "practitioner": practitioner,
-            "appointment_date": date
-        },
-        pluck="appointment_time"
-    )
-    booked_times = [(datetime.min + b).time() for b in booked]
-
-    weekday = date.strftime("%A")
-    slots = []
-
-    for row in practitioner_doc.practitioner_schedules:
-        schedule = frappe.get_doc("Practitioner Schedule", row.schedule)
-        if schedule.disabled:
-            continue
-
-        for ts in schedule.time_slots:
-            if ts.day != weekday:
-                continue
-
-            time_obj = (datetime.min + ts.from_time).time()
-
-            if date == today:
-                if time_obj <= get_time(get_datetime()):
-                    continue
-
-            if time_obj not in booked_times:
-                slots.append(time_obj.strftime("%H:%M"))
-
-    return sorted(slots)
-
-
-
-
-def make_appointment(practitioner, patient, date, slot):
-    practitioner_doc = frappe.get_doc("Healthcare Practitioner", practitioner)
-
-    doc = frappe.new_doc("Patient Appointment")
-    doc.appointment_type = frappe.db.get_single_value(
-        "Healthcare Settings", "default_appointment_type"
-    )
-    doc.appointment_for = "Practitioner"
-
-    company = frappe.defaults.get_user_default("company") or \
-              frappe.db.get_single_value("Global Defaults", "default_company")
-
-    doc.company = company
-    doc.patient = patient
-    doc.practitioner = practitioner_doc.name
-    doc.practitioner_name = practitioner_doc.practitioner_name
-    doc.department = practitioner_doc.department
-    doc.appointment_date = getdate(date)
-    doc.appointment_time = slot
-
-    service = frappe.get_doc("Healthcare Practitioner", practitioner)
-    billing = get_appointment_billing_item_and_rate(doc)
-
-    doc.billing_item = billing["service_item"]
-    doc.paid_amount = billing["practitioner_charge"]
-
-    doc.insert(ignore_permissions=True)
-    return doc
-
-
-
-def get_fees(practitioner, date):
-    doc = frappe._dict({
-        "doctype": "Patient Appointment",
-        "practitioner": practitioner,
-        "appointment_type": frappe.db.get_single_value(
-            "Healthcare Settings", "default_appointment_type"
-        ),
-    })
-
-    details = get_appointment_billing_item_and_rate(doc)
-
-    return {
-        "details": details,
-    }
-
-
-def get_appointments(patient):
-    return frappe.db.get_all(
-        "Patient Appointment",
-        filters={
-            "patient": patient,
-            "status": ["!=", "Cancelled"]
-        },
-        fields=[
-            "name",
-            "appointment_date",
-            "appointment_time",
-            "practitioner_name",
-            "department",
-            "status",
-            "paid_amount",
-            "invoiced"
-        ],
-        order_by="appointment_date desc, appointment_time desc",
-        limit=10
-    )
-
