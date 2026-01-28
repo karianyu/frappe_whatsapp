@@ -357,13 +357,14 @@ def process_message_safe(wa_number: str, text: str):
 
     # ——————— Step: Start ———————
     if session.get("step", "start") == "start":
-        if text == "1":
-            session["step"] = "book_appointment"
-            cache.set(session_key, json.dumps(session), TTL)
-        if text == "2":
-            session["step"] = "viewing_appointments"
-            cache.set(session_key, json.dumps(session), TTL)
-        if text == "3":
+        if find_patient_by_mobile(wa_number):
+            if text == "1":
+                session["step"] = "book_appointment"
+                cache.set(session_key, json.dumps(session), TTL)
+            if text == "2":
+                session["step"] = "viewing_appointments"
+                cache.set(session_key, json.dumps(session), TTL)
+        else:
             session["step"] = "new_patient"
             cache.set(session_key, json.dumps(session), TTL)
 
@@ -604,7 +605,7 @@ def process_message_safe(wa_number: str, text: str):
     if session.get("step", "start") == "select_date":
         # if is date
         if not check_if_is_date(text, check_future=True):
-            return "Invalid date.\nReply in the formart\ndd-mm-yy  e.g 15-12-2025\nDate must be later today, or after today"
+            return f"Invalid date.\nReply in the formart\ndd-mm-yy  e.g {get_today_ddmmyy()}\nDate must be later today, or after today"
         
         if text.split("-")[-1] not in [x.__dict__["year"] for x in frappe.get_single("Whatsapp API").years_of_operation]:
             return "Select a date with one (1) year of today"
@@ -709,14 +710,22 @@ def process_message_safe(wa_number: str, text: str):
 def welcome_message(number):
     # get company name
     company_name = frappe.get_value("Whatsapp API","Whatsapp API","company_name")
-    return f"""👋 Hello {find_patient_by_mobile(number)}! Welcome to {company_name}
+    if find_patient_by_mobile(number):
+        return f"""👋 Hello {find_patient_by_mobile(number)}! Welcome to {company_name}
 
-        Select an option to start:
-        1️⃣ Book Appointment
-        2️⃣ View My Appointments
-        3️⃣ New Patient 
+            Select an option to start:
+            1️⃣ Book Appointment
+            2️⃣ View My Appointments
 
-        Reply with 1, 2 or 3"""
+            Reply with 1 or 2"""
+    else:
+         return f"""👋 Hello and Welcome to {company_name}
+
+            To start your journey with us, please register as a patient using the prompt below:
+            1️⃣ New Patient
+
+            Reply with 1 or to register, or Menu to start """
+         
 
 def send_reply(number,text,type="text"):
     
@@ -741,10 +750,10 @@ def doctor_list(dept):
     return "Select Doctor:\n\n" + "\n".join(lines)
 
 def view_appointments(wa_number):
-    patient = find_patient_by_mobile(wa_number)
+    patient = patient_by_mobile(wa_number)
     if not patient:
         return "No patient record found. Reply with `Menu` and choose option 3 to register."
-    appts = get_appointments() or []
+    appts = get_appointments(patient) or []
     if not appts:
         return "You have no upcoming appointments."
     lines = [f"• {a['appointment_date']} {a.get('appointment_time','')} - Dr. {a.get('practitioner_name','')}" for a in appts[:5]]
@@ -753,6 +762,10 @@ def view_appointments(wa_number):
 def find_patient_by_mobile(mobile):
     patient = frappe.db.get_value("Patient", {"mobile": f"+{mobile}",}, ["name", "patient_name"], as_dict=1)
     return patient["patient_name"] if patient else ""
+
+def patient_by_mobile(mobile):
+    patient = frappe.db.get_value("Patient", {"mobile": f"+{mobile}",}, ["name", "patient_name"], as_dict=1)
+    return patient["name"]
 
 
 
@@ -842,3 +855,8 @@ def check_if_is_date(text: str, check_future: bool = False) -> date | bool:
         return parsed_date >= today
     
     return parsed_date
+
+
+def get_today_ddmmyy():
+    """Returns today's date as string in dd-mm-yy format (e.g. 28-01-26)"""
+    return datetime.today().strftime("%d-%m-%Y")
