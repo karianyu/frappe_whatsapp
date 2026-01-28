@@ -496,7 +496,7 @@ def process_message_safe(wa_number: str, text: str):
 
     if session.get("step", "start") == "awaiting_age":
         if not check_if_is_date(text):
-            return "That can't be a date. Try again. dd-mm-yy. e.g 15-12-2025"
+            return f"That can't be a date. Try again. dd-mm-yy. e.g {get_today_ddmmyy()}"
         session["dob"] = text
         session["step"] = "awaiting_id"
         cache.set(session_key, json.dumps(session), TTL)
@@ -597,7 +597,7 @@ def process_message_safe(wa_number: str, text: str):
             session["practitioner_name"] = doc["practitioner_name"]
             session["step"] = "select_date"
             cache.set(session_key, json.dumps(session), TTL)
-            return "To choose an appointment date date, reply with the date in the formart `dd-mm-yy`\n e.g `15-12-2025`"
+            return f"To choose an appointment date date, reply with the date in the formart `dd-mm-yy`\n e.g `{get_today_ddmmyy()}`"
         except Exception as e:
             frappe.log_error(session.get("step", "start"),e)
             return "Invalid doctor. Try again."
