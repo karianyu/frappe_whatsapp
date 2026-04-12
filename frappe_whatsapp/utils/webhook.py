@@ -349,24 +349,6 @@ def process_message_safe(wa_number: str, text: str):
         session = {}
         cache.set(session_key, json.dumps(session), TTL)
         return welcome_message(wa_number)
-    
-    # ── NLP layer: extract intent & entities for non-trivial input ──
-    # Skip NLP for simple numeric replies and known keywords to save latency
-    _skip_nlp = text.isdigit() or text.lower() in ("confirm", "pay", "cancel")
-    entities = {}
-    clarification_prefix = ""
-
-    if not _skip_nlp:
-        
-        frappe.enqueue(
-            "frappe_whatsapp.utils.webhook.process_nlp_and_reply",
-            queue="short",  
-            timeout=3600,            # seconds before RQ kills the job
-            wa_number=wa_number,
-            text=text,
-            now=True               # False = background, True = synchronous (for testing)
-        )
-        return "⏳ One moment..." 
 
     _process_step(wa_number, text)
     
