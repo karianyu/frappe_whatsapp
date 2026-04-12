@@ -5,6 +5,7 @@ import requests
 import time
 from werkzeug.wrappers import Response
 import frappe.utils
+from .ollama_nlp import extract_nlp_entities, merge_nlp_into_session, auto_advance_booking
 
 from frappe_whatsapp.utils import get_whatsapp_account
 import frappe
@@ -17,6 +18,9 @@ from healthcare.healthcare.api.patient_portal import (
         )
 from datetime import date, datetime
 from healthcare.healthcare.payment import (send_stk_push , get_access_token)
+
+import re
+from healthcare.healthcare.doctype.patient_encounter.patient_encounter import chat_ollama
 
 
 
@@ -336,14 +340,8 @@ def save_user_session(wa_number, data):
 def process_message_safe(wa_number: str, text: str):
     cache = frappe.cache
     session_key = SESSION_PREFIX + wa_number
-    session = cache.get(session_key)
-    if session:
-        try:
-            session = json.loads(session)
-        except:
-            session = {}
-    else:
-        session = {}
+    raw = cache.get(session_key)
+    session = json.loads(raw) if raw else {}
     
 
     # Reset
@@ -351,10 +349,37 @@ def process_message_safe(wa_number: str, text: str):
         session = {}
         cache.set(session_key, json.dumps(session), TTL)
         return welcome_message(wa_number)
-
-    step = session.get("step", "start")
     
+    # ── NLP layer: extract intent & entities for non-trivial input ──
+    # Skip NLP for simple numeric replies and known keywords to save latency
+    _skip_nlp = text.isdigit() or text.lower() in ("confirm", "pay", "cancel")
+    entities = {}
+    clarification_prefix = ""
 
+    if not _skip_nlp:
+        
+        frappe.enqueue(
+            "frappe_whatsapp.utils.webhook.process_nlp_and_reply",
+            queue="short",  
+            timeout=3600,            # seconds before RQ kills the job
+            wa_number=wa_number,
+            text=text,
+            now=True               # False = background, True = synchronous (for testing)
+        )
+        return "⏳ One moment..." 
+
+    _process_step(wa_number, text)
+    
+def _process_step(wa_number: str, text: str) -> str | None:
+    """
+    Pure step router — no NLP. Handles digits, CONFIRM, PAY, etc.
+    Extracted from process_message_safe so both the inline path
+    and the background job can call it.
+    """
+    cache = frappe.cache
+    session_key = SESSION_PREFIX + wa_number
+    raw = cache.get(session_key)
+    session = json.loads(raw) if raw else {}
     # ——————— Step: Start ———————
     if session.get("step", "start") == "start":
         if find_patient_by_mobile(wa_number):
@@ -860,3 +885,35 @@ def check_if_is_date(text: str, check_future: bool = False) -> date | bool:
 def get_today_ddmmyy():
     """Returns today's date as string in dd-mm-yy format (e.g. 28-01-26)"""
     return datetime.today().strftime("%d-%m-%Y")
+
+
+def process_nlp_and_reply(wa_number: str, text: str):
+    """
+    Runs in a background RQ worker. Safe to block on Ollama.
+    """
+    try:
+        cache = frappe.cache
+        session_key = SESSION_PREFIX + wa_number
+        raw = cache.get(session_key)
+        session = json.loads(raw) if raw else {}
+
+        # NLP call — can take as long as it needs
+        entities = extract_nlp_entities(text)
+        session, clarification_prefix = merge_nlp_into_session(session, entities, wa_number)
+        cache.set(session_key, json.dumps(session), TTL)
+
+        # Auto-advance booking steps if entities pre-filled the session
+        auto_reply = auto_advance_booking(session, cache, session_key)
+        reply = (clarification_prefix or "") + auto_reply if auto_reply else None
+
+        # Fall back to the regular step router if auto-advance had nothing
+        if not reply:
+            reply = _process_step(wa_number, text)
+
+        if reply:
+            send_reply(wa_number, reply)
+
+    except Exception as e:
+        frappe.log_error("NLP Background Job Failed", frappe.get_traceback())
+        # Send a graceful fallback so the user isn't left hanging
+        send_reply(wa_number, "⚠️ Sorry, I had trouble understanding that. Reply *MENU* to start over.")

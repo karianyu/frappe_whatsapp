@@ -161,7 +161,7 @@ class WhatsAppNotification(Document):
                         },
                         fieldname="value"
                     )
-                    print_format = default_print_format if default_print_format else print_format
+                    print_format = self.print_formats if self.print_formats else default_print_format
                 link = get_pdf_link(
                     doc_data['doctype'],
                     doc_data['name'],

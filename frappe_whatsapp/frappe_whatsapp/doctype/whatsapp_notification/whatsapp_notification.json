@@ -24,6 +24,7 @@
   "attach",
   "attach_from_field",
   "file_name",
+  "print_formats",
   "section_break_11",
   "condition",
   "column_break_12",
@@ -215,11 +216,17 @@
    "fieldname": "button_fields",
    "fieldtype": "Data",
    "label": "Button Fields"
+  },
+  {
+   "fieldname": "print_formats",
+   "fieldtype": "Link",
+   "label": "Print Formats",
+   "options": "Print Format"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-09-18 02:11:52.149544",
+ "modified": "2026-04-12 15:34:10.514489",
  "modified_by": "Administrator",
  "module": "Frappe Whatsapp",
  "name": "WhatsApp Notification",
@@ -239,6 +246,7 @@
    "write": 1
   }
  ],
+ "row_format": "Dynamic",
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],
